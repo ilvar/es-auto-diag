@@ -21,7 +21,7 @@ To run:
 
 ## Example output
 
-![Output](https://raw.githubusercontent.com/ilvar/es-auto-diag/main/example.png)
+![Output](/example.png)
 
 ## TODO
 
