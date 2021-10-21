@@ -1,10 +1,12 @@
 # Automatically analyse Elasticsearch diagnostic dump
 
+First make dump with [support-diagnostics](https://github.com/elastic/support-diagnostics)
+
 To run:
 
     pipenv run python3 ./analyze_diag.py ./PATH/TO/DUMP/
 
-Checks list:
+## Checks list
 
 * Compressed oops
 * Shards count
@@ -16,3 +18,8 @@ Checks list:
 * Shard distribution by doc count
 * Shard distribution by size
 * Shard distribution per node
+
+## TODO
+
+* Web UI
+* Drill down into what specifically indices/sharsds/etc are offenders
