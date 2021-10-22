@@ -27,3 +27,9 @@ To run:
 
 * Web UI
 * Drill down into what specifically indices/sharsds/etc are offenders
+* Additional checks:
+  * hot threads analysis
+  * doc counts, deleted doc counts
+  * refresh duration
+  * flush duration
+  * rejections (search, index, bulk) - green/red

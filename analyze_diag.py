@@ -60,13 +60,13 @@ class Analyzer():
         shard_sizes_gb = [int(s["store"]) / self.GB for s in shards_data if s.get("store")]
         self.charts.append(plotille.histogram(shard_sizes_gb, height=10, x_min=0, x_max=100))
 
-        small_shards_count = len([s for s in shard_sizes_gb if s < 20])
+        small_shards_count = len([s for s in shard_sizes_gb if s < 1])
         large_shards_count = len([s for s in shard_sizes_gb if s > 50])
 
         if small_shards_count > 0.1 * shards_count:
-            self.bad.append("Cluster has %s (%.2f%%) small (less than 20 GB) shards, shrinking or merging recommended" % (small_shards_count, small_shards_count / shards_count))
+            self.bad.append("Cluster has %s (%.2f%%) small (less than 1 GB) shards, shrinking or merging recommended" % (small_shards_count, small_shards_count / shards_count))
         else:
-            self.good.append("Cluster has %s (%.2f%%) small (less than 20 GB) shards" % (small_shards_count, small_shards_count / shards_count * 100))
+            self.good.append("Cluster has %s (%.2f%%) small (less than 1 GB) shards" % (small_shards_count, small_shards_count / shards_count * 100))
 
         if large_shards_count > 0:
             self.bad.append("Cluster has %s (%.2f%%) large (more than 50 GB) shards" % (large_shards_count, large_shards_count / shards_count * 100))
