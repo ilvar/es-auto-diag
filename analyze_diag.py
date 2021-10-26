@@ -9,12 +9,42 @@ import rich.table
 
 import plotille
 
+
+class Result():
+    CODE_CLUSTER_HEALTH = "CLUSTER_HEALTH"
+    CODE_COMPRESSED_OOPS = "COMPRESSED_OOPS"
+    CODE_OVERSHARDING = "OVERSHARDING"
+    CODE_MANY_SMALL_SHARDS = "MANY_SMALL_SHARDS"
+    CODE_MANY_LARGE_SHARDS = "MANY_LARGE_SHARDS"
+    CODE_CLUSTER_STATE_SIZE = "CLUSTER_STATE_SIZE"
+    CODE_REFRESH_INTERVAL = "REFRESH_INTERVAL"
+
+    def __init__(self, message, code, bad=False, value=None) -> None:
+        self.message = message
+        self.code = code
+        self.value = value
+        self.bad = bad
+
+    def get_message(self):
+        return self.message
+
+    def get_code(self):
+        return self.code
+
+    def get_value(self):
+        return self.value
+
+    def is_bad(self):
+        return self.bad
+
+    def is_good(self):
+        return not self.bad
+
 class Analyzer():
     root_path = None
     console = None
 
-    good = []
-    bad = []
+    results = []
     charts = []
     
     GB = 1024 * 1024 * 1024
@@ -30,9 +60,19 @@ class Analyzer():
         cluster_health = self._load_json("cluster_health.json")
 
         if cluster_health["status"] != "green":
-            self.bad.append("Cluster is: %s" % cluster_health["status"].upper())
+            self.results.append(Result(
+                "Cluster is: %s" % cluster_health["status"].upper(),
+                code=Result.CODE_CLUSTER_HEALTH,
+                bad=True,
+                value=cluster_health["status"],
+            ))
         else:
-            self.good.append("Cluster is: GREEN")    
+            self.results.append(Result(
+                "Cluster is: GREEN",
+                code=Result.CODE_CLUSTER_HEALTH,
+                bad=False,
+                value=cluster_health["status"],
+            ))    
 
     def check_nodes(self):
         nodes_data = self._load_json("nodes.json")["nodes"]
@@ -40,18 +80,37 @@ class Analyzer():
         compressed_oops_count = sum([n["jvm"]["using_compressed_ordinary_object_pointers"] == "true" for n in nodes_data.values()])
 
         if compressed_oops_count < node_count:
-            self.bad.append("Compressed OOPs off for %s nodes out of %s" % (node_count - compressed_oops_count, node_count))
+            self.results.append(Result(
+                "Compressed OOPs off for %s nodes out of %s" % (node_count - compressed_oops_count, node_count),
+                code=Result.CODE_COMPRESSED_OOPS,
+                bad=True,
+                value=node_count - compressed_oops_count,
+            ))
         else:
-            self.good.append("Compressed OOPs on for all nodes")    
+            self.results.append(Result(
+                "Compressed OOPs on for all nodes",
+                code=Result.CODE_COMPRESSED_OOPS,
+                bad=False,
+            ))
 
     def check_shards(self):
         shards_data = self._load_json("shards.json")
         shards_count = len(shards_data)
 
-        if shards_count > 10000:
-            self.bad.append("Cluster has %s shards, that can cause some instability" % shards_count)
+        if shards_count > 20000:
+            self.results.append(Result(
+                "Cluster has %s shards, that can cause some instability" % shards_count,
+                code=Result.CODE_OVERSHARDING,
+                bad=True,
+                value=shards_count,
+            ))
         else:
-            self.good.append("Cluster has %s shards, that should not cause any issues" % shards_count)
+            self.results.append(Result(
+                "Cluster has %s shards, that should not cause any issues" % shards_count,
+                code=Result.CODE_OVERSHARDING,
+                bad=True,
+                value=shards_count,
+            ))
 
         self.charts.append("Shards by doc count (millions)")
         self.charts.append(plotille.histogram([int(s["docs"]) / 1024 / 1024 for s in shards_data if s.get("docs")], height=10, x_min=0, x_max=100))
@@ -64,22 +123,52 @@ class Analyzer():
         large_shards_count = len([s for s in shard_sizes_gb if s > 50])
 
         if small_shards_count > 0.1 * shards_count:
-            self.bad.append("Cluster has %s (%.2f%%) small (less than 1 GB) shards, shrinking or merging recommended" % (small_shards_count, small_shards_count / shards_count))
+            self.results.append(Result(
+                "Cluster has %s (%.2f%%) small (less than 1 GB) shards, shrinking or merging recommended" % (small_shards_count, small_shards_count / shards_count * 100),
+                code=Result.CODE_MANY_SMALL_SHARDS,
+                bad=True,
+                value=small_shards_count,
+            ))
         else:
-            self.good.append("Cluster has %s (%.2f%%) small (less than 1 GB) shards" % (small_shards_count, small_shards_count / shards_count * 100))
+            self.results.append(Result(
+                "Cluster has %s (%.2f%%) small (less than 1 GB) shards" % (small_shards_count, small_shards_count / shards_count * 100),
+                code=Result.CODE_MANY_SMALL_SHARDS,
+                bad=False,
+                value=small_shards_count,
+            ))
 
         if large_shards_count > 0:
-            self.bad.append("Cluster has %s (%.2f%%) large (more than 50 GB) shards" % (large_shards_count, large_shards_count / shards_count * 100))
+            self.results.append(Result(
+                "Cluster has %s (%.2f%%) large (more than 50 GB) shards" % (large_shards_count, large_shards_count / shards_count * 100),
+                code=Result.CODE_MANY_LARGE_SHARDS,
+                bad=True,
+                value=large_shards_count,
+            ))
         else:
-            self.good.append("Cluster has %s (%.2f%%) large (more than 50 GB) shards" % (large_shards_count, large_shards_count / shards_count * 100))
+            self.results.append(Result(
+                "Cluster has %s (%.2f%%) large (more than 50 GB) shards" % (large_shards_count, large_shards_count / shards_count * 100),
+                code=Result.CODE_MANY_LARGE_SHARDS,
+                bad=False,
+                value=large_shards_count,
+            ))
 
         cluster_state_size = os.path.getsize(os.path.join(self.root_path, "cluster_state.json"))
         cluster_state_size_mb = cluster_state_size / 1024 / 1024
 
         if cluster_state_size_mb > 50:
-            self.bad.append("Cluster state size is %.2f MB; this might cause various issues across the cluster" % cluster_state_size_mb)
+            self.results.append(Result(
+                "Cluster state size is %.2f MB; this might cause various issues across the cluster" % cluster_state_size_mb,
+                code=Result.CODE_CLUSTER_STATE_SIZE,
+                bad=True,
+                value=cluster_state_size_mb,
+            ))
         else:
-            self.good.append("Cluster state size is %.2f MB" % cluster_state_size_mb)
+            self.results.append(Result(
+                "Cluster state size is %.2f MB" % cluster_state_size_mb,
+                code=Result.CODE_CLUSTER_STATE_SIZE,
+                bad=False,
+                value=cluster_state_size_mb,
+            ))
 
         shards_by_node = {}
 
@@ -98,9 +187,19 @@ class Analyzer():
         refresh_1s_indices_count = len([i for i in settings_data if i["settings"]["index"].get("refresh_interval", "1s")])
 
         if refresh_1s_indices_count / indices_count > 0.1:
-            self.bad.append("refresh_interval is default 1s for %s indices (%.2f%%), consider raising to 30s or 60s to speed up ingestion" % (refresh_1s_indices_count, refresh_1s_indices_count / indices_count * 100))
+            self.results.append(Result(
+                "refresh_interval is default 1s for %s indices (%.2f%%), consider raising to 30s or 60s to speed up ingestion" % (refresh_1s_indices_count, refresh_1s_indices_count / indices_count * 100),
+                code=Result.CODE_REFRESH_INTERVAL,
+                bad=False,
+                value=refresh_1s_indices_count,
+            ))
         else:
-            self.good.append("refresh_interval is default 1s for %s indices (%.2f%%), that's ok" % (refresh_1s_indices_count, refresh_1s_indices_count / indices_count * 100))
+            self.results.append(Result(
+                "refresh_interval is default 1s for %s indices (%.2f%%), that's ok" % (refresh_1s_indices_count, refresh_1s_indices_count / indices_count * 100),
+                code=Result.CODE_REFRESH_INTERVAL,
+                bad=False,
+                value=refresh_1s_indices_count,
+            ))
 
     def check_fielddata(self):
         fielddata_stats = self._load_json("fielddata_stats.json")
@@ -177,20 +276,23 @@ class Analyzer():
         return self
 
     def render(self):
-        if any(self.bad):
+        good = list(filter(lambda r: r.is_good(), self.results))
+        bad = list(filter(lambda r: r.is_bad(), self.results))
+
+        if any(bad):
             self.console.print("BAD:", style="bold red")
-            for msg in self.bad:
-                self.console.print(" * ", msg, style="bold red")
+            for msg in bad:
+                self.console.print(" * ", msg.get_message(), style="bold red")
 
         if any(self.charts):
             self.console.print("CHARTS:", style="bold yellow")
             for msg in self.charts:
-                self.console.print(" * ", msg, style="yellow")
+                self.console.print(msg, style="yellow")
 
-        if any(self.good):
+        if any(good):
             self.console.print("GOOD:", style="bold green")
-            for msg in self.good:
-                self.console.print(" * ", msg, style="green")    
+            for msg in good:
+                self.console.print(" * ", msg.get_message(), style="green")    
         
         return self
 
