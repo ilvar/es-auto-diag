@@ -21,6 +21,8 @@ class Result():
     CODE_REFRESH_INTERVAL = "REFRESH_INTERVAL"
     CODE_THREAD_POOL_REJECTIONS = "THREAD_POOL_REJECTIONS"
     CODE_HOT_THREADS = "HOT_THREADS"
+    CODE_DOCS_COUNT = "DOCS_COUNT"
+    CODE_DURATION = "DURATION"
 
     def __init__(self, message, code, bad=False, value=None) -> None:
         self.message = message
@@ -56,8 +58,9 @@ class Analyzer():
         self.root_path = root_path
         self.console = rich.console.Console()
 
-    def _load_json(self, f: str) -> any: 
-        return json.load(open(os.path.join(self.root_path, f)))
+    def _load_json(self, fname: str) -> any: 
+        with open(os.path.join(self.root_path, fname)) as f: 
+            return json.load(f)
 
     def check_cluster_health(self):
         cluster_health = self._load_json("cluster_health.json")
@@ -95,6 +98,60 @@ class Analyzer():
                 code=Result.CODE_COMPRESSED_OOPS,
                 bad=False,
             ))
+
+    def check_indices(self):
+        indices_data = self._load_json("indices_stats.json")
+
+        total_docs = indices_data["_all"]["primaries"]["docs"]["count"]
+        deleted_docs = indices_data["_all"]["primaries"]["docs"]["deleted"]
+
+        values = (total_docs, deleted_docs, deleted_docs / total_docs * 100)
+        self.results.append(Result(
+            "Total docs: %s; deleted docs: %s (%.2f%%)" % values,
+            code=Result.CODE_DOCS_COUNT,
+            bad=False,
+            value=values,
+        ))
+
+        refresh_duration_millis = indices_data["_all"]["primaries"]["refresh"]["total_time_in_millis"]
+        refresh_duration_hours = refresh_duration_millis / 1000 / 3600
+
+        self.results.append(Result(
+            "Refresh duration: total %.2f hours" % refresh_duration_hours,
+            code=Result.CODE_DURATION,
+            bad=False,
+            value=refresh_duration_hours,
+        ))
+
+        flush_duration_millis = indices_data["_all"]["primaries"]["flush"]["total_time_in_millis"]
+        flush_duration_hours = flush_duration_millis / 1000 / 3600
+
+        self.results.append(Result(
+            "Flush duration: total %.2f hours" % flush_duration_hours,
+            code=Result.CODE_DURATION,
+            bad=False,
+            value=flush_duration_hours,
+        ))
+
+        index_duration_millis = indices_data["_all"]["primaries"]["indexing"]["index_time_in_millis"]
+        index_duration_hours = index_duration_millis / 1000 / 3600
+
+        self.results.append(Result(
+            "Indexing duration: total %.2f hours" % index_duration_hours,
+            code=Result.CODE_DURATION,
+            bad=False,
+            value=index_duration_hours,
+        ))
+
+        search_duration_millis = indices_data["_all"]["primaries"]["search"]["query_time_in_millis"]
+        search_duration_hours = search_duration_millis / 1000 / 3600
+
+        self.results.append(Result(
+            "Search duration: total %.2f hours" % search_duration_hours,
+            code=Result.CODE_DURATION,
+            bad=False,
+            value=search_duration_hours,
+        ))
 
     def check_shards(self):
         shards_data = self._load_json("shards.json")
@@ -322,12 +379,11 @@ class Analyzer():
                 value=hot_threads,
             ))
 
-            
-
     def check(self):
         self.check_cluster_health()
         self.check_nodes()
         self.check_settings()
+        self.check_indices()
         self.check_shards()
         self.check_fielddata()
         self.check_node_stats()
