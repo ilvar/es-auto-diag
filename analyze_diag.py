@@ -18,6 +18,7 @@ class Result():
     CODE_MANY_LARGE_SHARDS = "MANY_LARGE_SHARDS"
     CODE_CLUSTER_STATE_SIZE = "CLUSTER_STATE_SIZE"
     CODE_REFRESH_INTERVAL = "REFRESH_INTERVAL"
+    CODE_THREAD_POOL_REJECTIONS = "THREAD_POOL_REJECTIONS"
 
     def __init__(self, message, code, bad=False, value=None) -> None:
         self.message = message
@@ -231,14 +232,18 @@ class Analyzer():
     def check_node_stats(self):
         nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
         thread_pool_rejections = {}
+        thread_pool_completed = {}
 
         for n in nodes_stats:
             for tp, tpd in n["thread_pool"].items():
-                # TODO: check "largest" and "queue" as well
                 if tp not in thread_pool_rejections:
                     thread_pool_rejections[tp] = 0
                 
+                if tp not in thread_pool_completed:
+                    thread_pool_completed[tp] = 0
+                
                 thread_pool_rejections[tp] += tpd["rejected"]
+                thread_pool_completed[tp] += tpd["completed"]
 
         thread_pool_rejections_list = list(thread_pool_rejections.items())
         thread_pool_rejections_list.sort(key=lambda fs: fs[1])
@@ -250,6 +255,14 @@ class Analyzer():
         for tp, tpr in thread_pool_rejections_list:
             if tpr > 0:
                 table.add_row(tp, "%s" % tpr)
+
+                msg_params = (tp.upper(), tpr, tpr / thread_pool_completed[tp] * 100)
+                self.results.append(Result(
+                    "Thread pool rejections for %s detected: %s (%.2f%%)" % msg_params,
+                    code=Result.CODE_THREAD_POOL_REJECTIONS,
+                    bad=True,
+                    value=msg_params,
+                ))
 
         self.charts.append(table)
 
