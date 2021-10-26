@@ -3,6 +3,7 @@
 import json
 import sys
 import os
+import re
 
 import rich.console
 import rich.table
@@ -19,6 +20,7 @@ class Result():
     CODE_CLUSTER_STATE_SIZE = "CLUSTER_STATE_SIZE"
     CODE_REFRESH_INTERVAL = "REFRESH_INTERVAL"
     CODE_THREAD_POOL_REJECTIONS = "THREAD_POOL_REJECTIONS"
+    CODE_HOT_THREADS = "HOT_THREADS"
 
     def __init__(self, message, code, bad=False, value=None) -> None:
         self.message = message
@@ -279,6 +281,49 @@ class Analyzer():
         self.charts.append("Nodes by disk size (GB)")
         self.charts.append(plotille.histogram(nodes_disk_size_gb, height=10, x_min=0))
 
+    def check_hot_threads(self):
+        with open(os.path.join(self.root_path, "nodes_hot_threads.txt")) as f:
+            hot_threads_raw = f.readlines()
+        
+        hot_threads = []
+        bad_re = re.compile("^\s*9\d.\d\%")
+        bad_lines = []
+        bad_block = False
+        for l in hot_threads_raw:
+            if not l.strip() and any(bad_lines):
+                # end of block
+                hot_threads.append(bad_lines[:10])
+                continue
+
+            if bad_re.match(l):
+                bad_lines = [l.strip()]
+                bad_block = True
+                continue
+
+            if bad_block:
+                bad_lines.append(l.strip())
+
+        if len(hot_threads) > 5:
+            with open("hot_threads.txt", "w") as f:
+                for t in hot_threads:
+                    f.write("\n".join(t))
+                    f.write("\n\n")
+            self.results.append(Result(
+                "%s hot threads detected; details written to hot_threads.txt" % len(hot_threads),
+                code=Result.CODE_HOT_THREADS,
+                bad=True,
+                value=hot_threads,
+            ))
+        else:
+            self.results.append(Result(
+                "%s hot threads detected" % len(hot_threads),
+                code=Result.CODE_HOT_THREADS,
+                bad=False,
+                value=hot_threads,
+            ))
+
+            
+
     def check(self):
         self.check_cluster_health()
         self.check_nodes()
@@ -286,6 +331,7 @@ class Analyzer():
         self.check_shards()
         self.check_fielddata()
         self.check_node_stats()
+        self.check_hot_threads()
         return self
 
     def render(self):
