@@ -23,6 +23,7 @@ class Result():
     CODE_HOT_THREADS = "HOT_THREADS"
     CODE_DOCS_COUNT = "DOCS_COUNT"
     CODE_DURATION = "DURATION"
+    CODE_GC = "GC"
 
     def __init__(self, message, code, bad=False, value=None) -> None:
         self.message = message
@@ -337,6 +338,39 @@ class Analyzer():
 
         self.charts.append("Nodes by disk size (GB)")
         self.charts.append(plotille.histogram(nodes_disk_size_gb, height=10, x_min=0))
+
+        young_gc_millis = 0
+        old_gc_millis = 0
+
+        for n in nodes_stats:
+            young_gc_millis += n["jvm"]["gc"]["collectors"]["young"]["collection_time_in_millis"]
+            old_gc_millis += n["jvm"]["gc"]["collectors"]["old"]["collection_time_in_millis"]
+
+        young_gc_hours = young_gc_millis / 1000 / 3600
+
+        self.results.append(Result(
+            "Young GC for %.2f hours" % young_gc_hours,
+            code=Result.CODE_GC,
+            bad=False,
+            value=young_gc_hours,
+        ))
+
+        old_gc_hours = old_gc_millis / 1000 / 3600
+
+        if old_gc_hours < 1.0:
+            self.results.append(Result(
+                "Old GC for %.2f hours" % old_gc_hours,
+                code=Result.CODE_GC,
+                bad=False,
+                value=young_gc_hours,
+            ))
+        else:
+            self.results.append(Result(
+                "Old GC for %.2f hours" % old_gc_hours,
+                code=Result.CODE_GC,
+                bad=True,
+                value=young_gc_hours,
+            ))
 
     def check_hot_threads(self):
         with open(os.path.join(self.root_path, "nodes_hot_threads.txt")) as f:
