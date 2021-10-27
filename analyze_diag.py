@@ -46,6 +46,23 @@ class Result():
     def is_good(self):
         return not self.bad
 
+    def to_dict(self):
+        return {
+            "message": self.message,
+            "code": self.code,
+            "value": self.value,
+            "bad": self.bad,
+        }
+    
+    @staticmethod
+    def from_dict(data):
+        return Result(
+            message=data["message"],
+            code=data["code"],
+            value=data["value"],
+            bad=data["bad"],
+        )
+
 class Analyzer():
     root_path = None
     console = None
