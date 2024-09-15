@@ -905,6 +905,7 @@ class Analyzer():
         self.check_id_field_type()
         self.check_custom_fields()
         self.check_index_settings()
+        self.check_index_settings()
         self.check_cpu_usage()
         self.check_disk_usage()
         return self
