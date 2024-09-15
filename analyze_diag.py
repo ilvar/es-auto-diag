@@ -394,7 +394,7 @@ class Analyzer():
             hot_threads_raw = f.readlines()
         
         hot_threads = []
-        bad_re = re.compile("^\s*9\d.\d\%")
+        bad_re = re.compile(r"^\s*9\d.\d\%")
         bad_lines = []
         bad_block = False
         for l in hot_threads_raw:
