@@ -430,7 +430,71 @@ class Analyzer():
                 value=hot_threads,
             ))
 
-    def check_memory_usage(self):
+    def check_jvm_heap_usage(self):
+        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+        high_heap_nodes = []
+
+        for n in nodes_stats:
+            heap_usage = n["jvm"]["mem"]["heap_used_percent"]
+            if heap_usage > 75:
+                high_heap_nodes.append((n["name"], heap_usage))
+
+        if high_heap_nodes:
+            for node, heap in high_heap_nodes:
+                self.results.append(Result(
+                    "High JVM heap usage on node %s: %d%%" % (node, heap),
+                    code="HIGH_JVM_HEAP_USAGE",
+                    bad=True,
+                    value=heap,
+                ))
+        else:
+            self.results.append(Result(
+                "JVM heap usage is within acceptable limits on all nodes",
+                code="HIGH_JVM_HEAP_USAGE",
+                bad=False,
+            ))
+
+    def check_pending_tasks(self):
+        pending_tasks = self._load_json("pending_tasks.json")["tasks"]
+        pending_task_count = len(pending_tasks)
+
+        if pending_task_count > 0:
+            self.results.append(Result(
+                "There are %d pending tasks in the cluster" % pending_task_count,
+                code="PENDING_TASKS",
+                bad=True,
+                value=pending_task_count,
+            ))
+        else:
+            self.results.append(Result(
+                "There are no pending tasks in the cluster",
+                code="PENDING_TASKS",
+                bad=False,
+            ))
+
+    def check_disk_io(self):
+        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+        high_disk_io_nodes = []
+
+        for n in nodes_stats:
+            disk_io = n["fs"]["io_stats"]["total"]["operations"]
+            if disk_io > 1000000:  # arbitrary threshold for high disk I/O
+                high_disk_io_nodes.append((n["name"], disk_io))
+
+        if high_disk_io_nodes:
+            for node, io in high_disk_io_nodes:
+                self.results.append(Result(
+                    "High disk I/O on node %s: %d operations" % (node, io),
+                    code="HIGH_DISK_IO",
+                    bad=True,
+                    value=io,
+                ))
+        else:
+            self.results.append(Result(
+                "Disk I/O is within acceptable limits on all nodes",
+                code="HIGH_DISK_IO",
+                bad=False,
+            ))
         nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
         high_memory_nodes = []
 
@@ -545,6 +609,9 @@ class Analyzer():
         self.check_memory_usage()
         self.check_unassigned_shards()
         self.check_disk_watermark()
+        self.check_jvm_heap_usage()
+        self.check_pending_tasks()
+        self.check_disk_io()
         self.check_nodes()
         self.check_settings()
         self.check_indices()
