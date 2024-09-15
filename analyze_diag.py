@@ -306,7 +306,75 @@ class Analyzer():
         self.charts.append("Zero-data fields (consider removal from mappings)")
         self.charts.append(" * " + f)
 
-    def check_node_stats(self):
+    def check_dynamic_mapping(self):
+        mappings_data = self._load_json("mappings.json")
+        dynamic_mapping_enabled = []
+
+        for index, mapping in mappings_data.items():
+            if mapping["mappings"].get("dynamic", "true") == "true":
+                dynamic_mapping_enabled.append(index)
+
+        if dynamic_mapping_enabled:
+            self.results.append(Result(
+                "Dynamic mapping is enabled for indices: %s" % ", ".join(dynamic_mapping_enabled),
+                code="DYNAMIC_MAPPING_ENABLED",
+                bad=True,
+                value=dynamic_mapping_enabled,
+            ))
+        else:
+            self.results.append(Result(
+                "Dynamic mapping is disabled for all indices",
+                code="DYNAMIC_MAPPING_ENABLED",
+                bad=False,
+            ))
+
+    def check_field_count(self):
+        mappings_data = self._load_json("mappings.json")
+        high_field_count_indices = []
+
+        for index, mapping in mappings_data.items():
+            field_count = len(mapping["mappings"]["properties"])
+            if field_count > 1000:  # arbitrary threshold for high field count
+                high_field_count_indices.append((index, field_count))
+
+        if high_field_count_indices:
+            for index, count in high_field_count_indices:
+                self.results.append(Result(
+                    "High field count in index %s: %d fields" % (index, count),
+                    code="HIGH_FIELD_COUNT",
+                    bad=True,
+                    value=count,
+                ))
+        else:
+            self.results.append(Result(
+                "Field count is within acceptable limits for all indices",
+                code="HIGH_FIELD_COUNT",
+                bad=False,
+            ))
+
+    def check_nested_fields(self):
+        mappings_data = self._load_json("mappings.json")
+        high_nested_field_indices = []
+
+        for index, mapping in mappings_data.items():
+            nested_field_count = sum(1 for field in mapping["mappings"]["properties"].values() if field.get("type") == "nested")
+            if nested_field_count > 50:  # arbitrary threshold for high nested field count
+                high_nested_field_indices.append((index, nested_field_count))
+
+        if high_nested_field_indices:
+            for index, count in high_nested_field_indices:
+                self.results.append(Result(
+                    "High nested field count in index %s: %d nested fields" % (index, count),
+                    code="HIGH_NESTED_FIELD_COUNT",
+                    bad=True,
+                    value=count,
+                ))
+        else:
+            self.results.append(Result(
+                "Nested field count is within acceptable limits for all indices",
+                code="HIGH_NESTED_FIELD_COUNT",
+                bad=False,
+            ))
         nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
         thread_pool_rejections = {}
         thread_pool_completed = {}
@@ -691,6 +759,9 @@ class Analyzer():
         self.check_shards()
         self.check_fielddata()
         self.check_node_stats()
+        self.check_dynamic_mapping()
+        self.check_field_count()
+        self.check_nested_fields()
         self.check_hot_threads()
         self.check_cpu_usage()
         self.check_disk_usage()
