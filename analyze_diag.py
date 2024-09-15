@@ -430,7 +430,71 @@ class Analyzer():
                 value=hot_threads,
             ))
 
-    def check_cpu_usage(self):
+    def check_memory_usage(self):
+        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+        high_memory_nodes = []
+
+        for n in nodes_stats:
+            memory_usage = n["os"]["mem"]["used_percent"]
+            if memory_usage > 80:
+                high_memory_nodes.append((n["name"], memory_usage))
+
+        if high_memory_nodes:
+            for node, memory in high_memory_nodes:
+                self.results.append(Result(
+                    "High memory usage on node %s: %d%%" % (node, memory),
+                    code="HIGH_MEMORY_USAGE",
+                    bad=True,
+                    value=memory,
+                ))
+        else:
+            self.results.append(Result(
+                "Memory usage is within acceptable limits on all nodes",
+                code="HIGH_MEMORY_USAGE",
+                bad=False,
+            ))
+
+    def check_unassigned_shards(self):
+        cluster_health = self._load_json("cluster_health.json")
+        unassigned_shards = cluster_health["unassigned_shards"]
+
+        if unassigned_shards > 0:
+            self.results.append(Result(
+                "There are %d unassigned shards in the cluster" % unassigned_shards,
+                code="UNASSIGNED_SHARDS",
+                bad=True,
+                value=unassigned_shards,
+            ))
+        else:
+            self.results.append(Result(
+                "There are no unassigned shards in the cluster",
+                code="UNASSIGNED_SHARDS",
+                bad=False,
+            ))
+
+    def check_disk_watermark(self):
+        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+        high_disk_nodes = []
+
+        for n in nodes_stats:
+            disk_usage = n["fs"]["total"]["used_percent"]
+            if disk_usage > 85:
+                high_disk_nodes.append((n["name"], disk_usage))
+
+        if high_disk_nodes:
+            for node, disk in high_disk_nodes:
+                self.results.append(Result(
+                    "Disk usage on node %s has exceeded the high watermark: %d%%" % (node, disk),
+                    code="DISK_WATERMARK_EXCEEDED",
+                    bad=True,
+                    value=disk,
+                ))
+        else:
+            self.results.append(Result(
+                "Disk usage is within acceptable limits on all nodes",
+                code="DISK_WATERMARK_EXCEEDED",
+                bad=False,
+            ))
         nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
         high_cpu_nodes = []
 
@@ -478,6 +542,9 @@ class Analyzer():
                 bad=False,
             ))
         self.check_cluster_health()
+        self.check_memory_usage()
+        self.check_unassigned_shards()
+        self.check_disk_watermark()
         self.check_nodes()
         self.check_settings()
         self.check_indices()
