@@ -430,7 +430,53 @@ class Analyzer():
                 value=hot_threads,
             ))
 
-    def check(self):
+    def check_cpu_usage(self):
+        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+        high_cpu_nodes = []
+
+        for n in nodes_stats:
+            cpu_usage = n["os"]["cpu"]["percent"]
+            if cpu_usage > 80:
+                high_cpu_nodes.append((n["name"], cpu_usage))
+
+        if high_cpu_nodes:
+            for node, cpu in high_cpu_nodes:
+                self.results.append(Result(
+                    "High CPU usage on node %s: %d%%" % (node, cpu),
+                    code="HIGH_CPU_USAGE",
+                    bad=True,
+                    value=cpu,
+                ))
+        else:
+            self.results.append(Result(
+                "CPU usage is within acceptable limits on all nodes",
+                code="HIGH_CPU_USAGE",
+                bad=False,
+            ))
+
+    def check_disk_usage(self):
+        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+        low_disk_nodes = []
+
+        for n in nodes_stats:
+            disk_free = n["fs"]["total"]["available_in_bytes"] / self.GB
+            if disk_free < 10:  # less than 10 GB free
+                low_disk_nodes.append((n["name"], disk_free))
+
+        if low_disk_nodes:
+            for node, disk in low_disk_nodes:
+                self.results.append(Result(
+                    "Low disk space on node %s: %.2f GB free" % (node, disk),
+                    code="LOW_DISK_SPACE",
+                    bad=True,
+                    value=disk,
+                ))
+        else:
+            self.results.append(Result(
+                "Disk space is within acceptable limits on all nodes",
+                code="LOW_DISK_SPACE",
+                bad=False,
+            ))
         self.check_cluster_health()
         self.check_nodes()
         self.check_settings()
@@ -439,6 +485,8 @@ class Analyzer():
         self.check_fielddata()
         self.check_node_stats()
         self.check_hot_threads()
+        self.check_cpu_usage()
+        self.check_disk_usage()
         return self
 
     def render(self):
