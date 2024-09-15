@@ -306,7 +306,29 @@ class Analyzer():
         self.charts.append("Zero-data fields (consider removal from mappings)")
         self.charts.append(" * " + f)
 
-    def check_dynamic_mapping(self):
+    def check_id_field_type(self):
+        mappings_data = self._load_json("mappings.json")
+        problematic_indices = []
+
+        for index, mapping in mappings_data.items():
+            for field, field_data in mapping["mappings"]["properties"].items():
+                if field == "_id" and field_data.get("type") != "keyword":
+                    problematic_indices.append(index)
+
+        if problematic_indices:
+            for index in problematic_indices:
+                self.results.append(Result(
+                    "Field _id in index %s is not of type keyword" % index,
+                    code="NON_KEYWORD_ID_FIELD",
+                    bad=True,
+                    value=index,
+                ))
+        else:
+            self.results.append(Result(
+                "All _id fields are of type keyword",
+                code="NON_KEYWORD_ID_FIELD",
+                bad=False,
+            ))
         mappings_data = self._load_json("mappings.json")
         dynamic_mapping_enabled = []
 
@@ -856,6 +878,7 @@ class Analyzer():
         self.check_nested_fields()
         self.check_field_data_types()
         self.check_hot_threads()
+        self.check_id_field_type()
         self.check_cpu_usage()
         self.check_disk_usage()
         return self
