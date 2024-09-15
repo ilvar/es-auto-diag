@@ -398,7 +398,30 @@ class Analyzer():
                 bad=False,
             ))
 
-    def check_field_data_types(self):
+    def check_custom_fields(self):
+        mappings_data = self._load_json("mappings.json")
+        custom_fields_indices = []
+
+        for index, mapping in mappings_data.items():
+            for field, field_data in mapping["mappings"]["properties"].items():
+                if field.startswith("custom_") or (field_data.get("type") == "object" and "custom_" in field_data.get("properties", {})):
+                    custom_fields_indices.append(index)
+                    break
+
+        if custom_fields_indices:
+            for index in custom_fields_indices:
+                self.results.append(Result(
+                    "Custom fields found in index %s" % index,
+                    code="CUSTOM_FIELDS",
+                    bad=False,
+                    value=index,
+                ))
+        else:
+            self.results.append(Result(
+                "No custom fields found in any index",
+                code="CUSTOM_FIELDS",
+                bad=False,
+            ))
         mappings_data = self._load_json("mappings.json")
         problematic_fields = []
 
