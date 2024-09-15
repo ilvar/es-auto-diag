@@ -900,6 +900,7 @@ class Analyzer():
         self.check_field_count()
         self.check_nested_fields()
         self.check_field_data_types()
+        self.check_index_settings()
         self.check_hot_threads()
         self.check_id_field_type()
         self.check_custom_fields()
