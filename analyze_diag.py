@@ -361,54 +361,6 @@ class Analyzer():
                 bad=False,
             ))
 
-    def check_field_count(self):
-        mappings_data = self._load_json("mapping.json")
-        high_field_count_indices = []
-
-        for index, mapping in mappings_data.items():
-            field_count = len(mapping["mappings"]["properties"])
-            if field_count > 1000:  # arbitrary threshold for high field count
-                high_field_count_indices.append((index, field_count))
-
-        if high_field_count_indices:
-            for index, count in high_field_count_indices:
-                self.results.append(Result(
-                    "High field count in index %s: %d fields" % (index, count),
-                    code="HIGH_FIELD_COUNT",
-                    bad=True,
-                    value=count,
-                ))
-        else:
-            self.results.append(Result(
-                "Field count is within acceptable limits for all indices",
-                code="HIGH_FIELD_COUNT",
-                bad=False,
-            ))
-
-    def check_nested_fields(self):
-        mappings_data = self._load_json("mapping.json")
-        high_nested_field_indices = []
-
-        for index, mapping in mappings_data.items():
-            nested_field_count = sum(1 for field in mapping["mappings"]["properties"].values() if field.get("type") == "nested")
-            if nested_field_count > 50:  # arbitrary threshold for high nested field count
-                high_nested_field_indices.append((index, nested_field_count))
-
-        if high_nested_field_indices:
-            for index, count in high_nested_field_indices:
-                self.results.append(Result(
-                    "High nested field count in index %s: %d nested fields" % (index, count),
-                    code="HIGH_NESTED_FIELD_COUNT",
-                    bad=True,
-                    value=count,
-                ))
-        else:
-            self.results.append(Result(
-                "Nested field count is within acceptable limits for all indices",
-                code="HIGH_NESTED_FIELD_COUNT",
-                bad=False,
-            ))
-
     def check_custom_fields(self):
         mappings_data = self._load_json("mapping.json")
         custom_fields_indices = []
@@ -420,7 +372,7 @@ class Analyzer():
             else:
                 fields_data = mapping["mappings"]
             for field, field_data in fields_data.items():
-                if field.startswith("custom_") or (field_data.get("type") == "object" and "custom_" in field_data.get("properties", {})):
+                if field.startswith("custom_"):
                     custom_fields_indices.append(index)
                     break
 
@@ -466,7 +418,7 @@ class Analyzer():
                 field_count = len(mapping["mappings"]["properties"])
             else:
                 field_count = len(mapping["mappings"])
-            if field_count > 1000:  # arbitrary threshold for high field count
+            if field_count > 200:  # arbitrary threshold for high field count
                 high_field_count_indices.append((index, field_count))
 
         if high_field_count_indices:
@@ -495,7 +447,7 @@ class Analyzer():
                 fields_data = mapping["mappings"]
 
             nested_field_count = sum(1 for field in fields_data.values() if field.get("type") == "nested")
-            if nested_field_count > 50:  # arbitrary threshold for high nested field count
+            if nested_field_count > 5:  # arbitrary threshold for high nested field count
                 high_nested_field_indices.append((index, nested_field_count))
 
         if high_nested_field_indices:
@@ -511,87 +463,6 @@ class Analyzer():
                 "Nested field count is within acceptable limits for all indices",
                 code="HIGH_NESTED_FIELD_COUNT",
                 bad=False,
-            ))
-        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
-        thread_pool_rejections = {}
-        thread_pool_completed = {}
-
-        for n in nodes_stats:
-            for tp, tpd in n["thread_pool"].items():
-                if tp not in thread_pool_rejections:
-                    thread_pool_rejections[tp] = 0
-                
-                if tp not in thread_pool_completed:
-                    thread_pool_completed[tp] = 0
-                
-                thread_pool_rejections[tp] += tpd["rejected"]
-                thread_pool_completed[tp] += tpd["completed"]
-
-        thread_pool_rejections_list = list(thread_pool_rejections.items())
-        thread_pool_rejections_list.sort(key=lambda fs: fs[1])
-        thread_pool_rejections_list.reverse()
-
-        table = rich.table.Table(title="Thread pool rejections")
-        table.add_column("Thread pool", justify="right", style="cyan", no_wrap=True)
-        table.add_column("Rejections", style="magenta")
-        for tp, tpr in thread_pool_rejections_list:
-            if tpr > 0:
-                table.add_row(tp, "%s" % tpr)
-
-                msg_params = (tp.upper(), tpr, tpr / thread_pool_completed[tp] * 100)
-                self.results.append(Result(
-                    "Thread pool rejections for %s detected: %s (%.2f%%)" % msg_params,
-                    code=Result.CODE_THREAD_POOL_REJECTIONS,
-                    bad=True,
-                    value=msg_params,
-                ))
-
-        self.charts.append(table)
-
-        nodes_doc_counts = []
-        nodes_disk_size_gb = []
-
-        for n in nodes_stats:
-            nodes_doc_counts.append(n["indices"]["docs"]["count"] / 1024 / 1024)
-            nodes_disk_size_gb.append(n["indices"]["store"]["size_in_bytes"] / self.GB)
-
-        self.charts.append("Nodes by doc count (millions)")
-        self.charts.append(plotille.histogram(nodes_doc_counts, height=10, x_min=0))
-
-        self.charts.append("Nodes by disk size (GB)")
-        self.charts.append(plotille.histogram(nodes_disk_size_gb, height=10, x_min=0))
-
-        young_gc_millis = 0
-        old_gc_millis = 0
-
-        for n in nodes_stats:
-            young_gc_millis += n["jvm"]["gc"]["collectors"]["young"]["collection_time_in_millis"]
-            old_gc_millis += n["jvm"]["gc"]["collectors"]["old"]["collection_time_in_millis"]
-
-        young_gc_hours = young_gc_millis / 1000 / 3600
-
-        self.results.append(Result(
-            "Young GC for %.2f hours" % young_gc_hours,
-            code=Result.CODE_GC,
-            bad=False,
-            value=young_gc_hours,
-        ))
-
-        old_gc_hours = old_gc_millis / 1000 / 3600
-
-        if old_gc_hours < 1.0:
-            self.results.append(Result(
-                "Old GC for %.2f hours" % old_gc_hours,
-                code=Result.CODE_GC,
-                bad=False,
-                value=young_gc_hours,
-            ))
-        else:
-            self.results.append(Result(
-                "Old GC for %.2f hours" % old_gc_hours,
-                code=Result.CODE_GC,
-                bad=True,
-                value=young_gc_hours,
             ))
 
     def check_hot_threads(self):
@@ -751,7 +622,7 @@ class Analyzer():
                 code="HIGH_MEMORY_USAGE",
                 bad=False,
             ))
-        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
+
         high_disk_io_nodes = []
 
         for n in nodes_stats:
@@ -771,28 +642,6 @@ class Analyzer():
             self.results.append(Result(
                 "Disk I/O is within acceptable limits on all nodes",
                 code="HIGH_DISK_IO",
-                bad=False,
-            ))
-        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
-        high_memory_nodes = []
-
-        for n in nodes_stats:
-            memory_usage = n["os"]["mem"]["used_percent"]
-            if memory_usage > 80:
-                high_memory_nodes.append((n["name"], memory_usage))
-
-        if high_memory_nodes:
-            for node, memory in high_memory_nodes:
-                self.results.append(Result(
-                    "High memory usage on node %s: %d%%" % (node, memory),
-                    code="HIGH_MEMORY_USAGE",
-                    bad=True,
-                    value=memory,
-                ))
-        else:
-            self.results.append(Result(
-                "Memory usage is within acceptable limits on all nodes",
-                code="HIGH_MEMORY_USAGE",
                 bad=False,
             ))
 
@@ -860,30 +709,6 @@ class Analyzer():
                 bad=False,
             ))
 
-    def check_disk_usage(self):
-        nodes_stats = self._load_json("nodes_stats.json")["nodes"].values()
-        low_disk_nodes = []
-
-        for n in nodes_stats:
-            disk_free = n["fs"]["total"]["available_in_bytes"] / self.GB
-            if disk_free < 10:  # less than 10 GB free
-                low_disk_nodes.append((n["name"], disk_free))
-
-        if low_disk_nodes:
-            for node, disk in low_disk_nodes:
-                self.results.append(Result(
-                    "Low disk space on node %s: %.2f GB free" % (node, disk),
-                    code="LOW_DISK_SPACE",
-                    bad=True,
-                    value=disk,
-                ))
-        else:
-            self.results.append(Result(
-                "Disk space is within acceptable limits on all nodes",
-                code="LOW_DISK_SPACE",
-                bad=False,
-            ))
-
     def check_index_settings(self):
         settings_data = self._load_json("settings.json")
 
@@ -909,7 +734,6 @@ class Analyzer():
         self.check_pending_tasks()
         self.check_cpu_usage()
         self.check_disk_usage()
-        self.check_memory_usage()
         self.check_nodes()
         self.check_settings()
         self.check_indices()
