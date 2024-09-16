@@ -307,11 +307,15 @@ class Analyzer():
         self.charts.append(" * " + f)
 
     def check_id_field_type(self):
-        mappings_data = self._load_json("mappings.json")
+        mappings_data = self._load_json("mapping.json")
         problematic_indices = []
 
         for index, mapping in mappings_data.items():
-            for field, field_data in mapping["mappings"]["properties"].items():
+            if "properties" in mapping["mappings"]:
+                fields_data = mapping["mappings"]["properties"]
+            else:
+                fields_data = mapping["mappings"]
+            for field, field_data in fields_data.items():
                 if field == "_id" and field_data.get("type") != "keyword":
                     problematic_indices.append(index)
 
@@ -329,20 +333,27 @@ class Analyzer():
                 code="NON_KEYWORD_ID_FIELD",
                 bad=False,
             ))
-        mappings_data = self._load_json("mappings.json")
-        dynamic_mapping_enabled = []
 
+        dynamic_mapping_enabled = []
         for index, mapping in mappings_data.items():
             if mapping["mappings"].get("dynamic", "true") == "true":
                 dynamic_mapping_enabled.append(index)
 
         if dynamic_mapping_enabled:
-            self.results.append(Result(
-                "Dynamic mapping is enabled for indices: %s" % ", ".join(dynamic_mapping_enabled),
-                code="DYNAMIC_MAPPING_ENABLED",
-                bad=True,
-                value=dynamic_mapping_enabled,
-            ))
+            if len(dynamic_mapping_enabled) < 10:
+                self.results.append(Result(
+                    "Dynamic mapping is enabled for indices: %s" % ", ".join(dynamic_mapping_enabled),
+                    code="DYNAMIC_MAPPING_ENABLED",
+                    bad=True,
+                    value=dynamic_mapping_enabled,
+                ))
+            else:
+                self.results.append(Result(
+                    "Dynamic mapping is enabled for %s indices" % len(dynamic_mapping_enabled),
+                    code="DYNAMIC_MAPPING_ENABLED",
+                    bad=True,
+                    value=dynamic_mapping_enabled,
+                ))
         else:
             self.results.append(Result(
                 "Dynamic mapping is disabled for all indices",
@@ -351,7 +362,7 @@ class Analyzer():
             ))
 
     def check_field_count(self):
-        mappings_data = self._load_json("mappings.json")
+        mappings_data = self._load_json("mapping.json")
         high_field_count_indices = []
 
         for index, mapping in mappings_data.items():
@@ -375,7 +386,7 @@ class Analyzer():
             ))
 
     def check_nested_fields(self):
-        mappings_data = self._load_json("mappings.json")
+        mappings_data = self._load_json("mapping.json")
         high_nested_field_indices = []
 
         for index, mapping in mappings_data.items():
@@ -399,14 +410,22 @@ class Analyzer():
             ))
 
     def check_custom_fields(self):
-        mappings_data = self._load_json("mappings.json")
+        mappings_data = self._load_json("mapping.json")
         custom_fields_indices = []
+        problematic_fields = []
 
         for index, mapping in mappings_data.items():
-            for field, field_data in mapping["mappings"]["properties"].items():
+            if 'properties' in mapping["mappings"]:
+                fields_data = mapping["mappings"]["properties"]
+            else:
+                fields_data = mapping["mappings"]
+            for field, field_data in fields_data.items():
                 if field.startswith("custom_") or (field_data.get("type") == "object" and "custom_" in field_data.get("properties", {})):
                     custom_fields_indices.append(index)
                     break
+
+                if field_data.get("type") == "text" and field_data.get("fielddata", False):
+                    problematic_fields.append((index, field))
 
         if custom_fields_indices:
             for index in custom_fields_indices:
@@ -422,13 +441,6 @@ class Analyzer():
                 code="CUSTOM_FIELDS",
                 bad=False,
             ))
-        mappings_data = self._load_json("mappings.json")
-        problematic_fields = []
-
-        for index, mapping in mappings_data.items():
-            for field, field_data in mapping["mappings"]["properties"].items():
-                if field_data.get("type") == "text" and field_data.get("fielddata", False):
-                    problematic_fields.append((index, field))
 
         if problematic_fields:
             for index, field in problematic_fields:
@@ -444,33 +456,16 @@ class Analyzer():
                 code="PROBLEMATIC_FIELD_DATA_TYPE",
                 bad=False,
             ))
-        mappings_data = self._load_json("mappings.json")
-        dynamic_mapping_enabled = []
-
-        for index, mapping in mappings_data.items():
-            if mapping["mappings"].get("dynamic", "true") == "true":
-                dynamic_mapping_enabled.append(index)
-
-        if dynamic_mapping_enabled:
-            self.results.append(Result(
-                "Dynamic mapping is enabled for indices: %s" % ", ".join(dynamic_mapping_enabled),
-                code="DYNAMIC_MAPPING_ENABLED",
-                bad=True,
-                value=dynamic_mapping_enabled,
-            ))
-        else:
-            self.results.append(Result(
-                "Dynamic mapping is disabled for all indices",
-                code="DYNAMIC_MAPPING_ENABLED",
-                bad=False,
-            ))
 
     def check_field_count(self):
-        mappings_data = self._load_json("mappings.json")
+        mappings_data = self._load_json("mapping.json")
         high_field_count_indices = []
 
         for index, mapping in mappings_data.items():
-            field_count = len(mapping["mappings"]["properties"])
+            if 'properties' in mapping["mappings"]:
+                field_count = len(mapping["mappings"]["properties"])
+            else:
+                field_count = len(mapping["mappings"])
             if field_count > 1000:  # arbitrary threshold for high field count
                 high_field_count_indices.append((index, field_count))
 
@@ -490,11 +485,16 @@ class Analyzer():
             ))
 
     def check_nested_fields(self):
-        mappings_data = self._load_json("mappings.json")
+        mappings_data = self._load_json("mapping.json")
         high_nested_field_indices = []
 
         for index, mapping in mappings_data.items():
-            nested_field_count = sum(1 for field in mapping["mappings"]["properties"].values() if field.get("type") == "nested")
+            if 'properties' in mapping["mappings"]:
+                fields_data = mapping["mappings"]["properties"]
+            else:
+                fields_data = mapping["mappings"]
+
+            nested_field_count = sum(1 for field in fields_data.values() if field.get("type") == "nested")
             if nested_field_count > 50:  # arbitrary threshold for high nested field count
                 high_nested_field_indices.append((index, nested_field_count))
 
@@ -660,6 +660,9 @@ class Analyzer():
             ))
 
     def check_pending_tasks(self):
+        if not os.path.exists(os.path.join(self.root_path, "pending_tasks.json")):
+            return
+
         pending_tasks = self._load_json("pending_tasks.json")["tasks"]
         pending_task_count = len(pending_tasks)
 
@@ -816,14 +819,14 @@ class Analyzer():
         high_disk_nodes = []
 
         for n in nodes_stats:
-            disk_usage = n["fs"]["total"]["used_percent"]
-            if disk_usage > 85:
-                high_disk_nodes.append((n["name"], disk_usage))
+            disk_free = n["fs"]["total"]["free_in_bytes"] / n["fs"]["total"]["total_in_bytes"] * 100
+            if disk_free < 15:
+                high_disk_nodes.append((n["name"], disk_free))
 
         if high_disk_nodes:
             for node, disk in high_disk_nodes:
                 self.results.append(Result(
-                    "Disk usage on node %s has exceeded the high watermark: %d%%" % (node, disk),
+                    "Disk usage on node %s has exceeded the high watermark: %d%% free" % (node, disk),
                     code="DISK_WATERMARK_EXCEEDED",
                     bad=True,
                     value=disk,
@@ -880,13 +883,30 @@ class Analyzer():
                 code="LOW_DISK_SPACE",
                 bad=False,
             ))
+
+    def check_index_settings(self):
+        settings_data = self._load_json("settings.json")
+
+        for index, settings in settings_data.items():
+            index_settings = settings["settings"]["index"]
+
+            # Check number of replicas
+            number_of_replicas = int(index_settings.get("number_of_replicas", 1))
+            if number_of_replicas < 1:
+                self.results.append(Result(
+                    "Index %s has less than 1 replica" % index,
+                    code="LOW_NUMBER_OF_REPLICAS",
+                    bad=True,
+                    value=number_of_replicas,
+                ))
+
+    def check(self):
         self.check_cluster_health()
         self.check_memory_usage()
         self.check_unassigned_shards()
         self.check_disk_watermark()
         self.check_jvm_heap_usage()
         self.check_pending_tasks()
-        self.check_disk_io()
         self.check_cpu_usage()
         self.check_disk_usage()
         self.check_memory_usage()
@@ -895,17 +915,11 @@ class Analyzer():
         self.check_indices()
         self.check_shards()
         self.check_fielddata()
-        self.check_node_stats()
-        self.check_dynamic_mapping()
         self.check_field_count()
         self.check_nested_fields()
-        self.check_field_data_types()
-        self.check_index_settings()
         self.check_hot_threads()
         self.check_id_field_type()
         self.check_custom_fields()
-        self.check_index_settings()
-        self.check_index_settings()
         self.check_index_settings()
         self.check_cpu_usage()
         self.check_disk_usage()
